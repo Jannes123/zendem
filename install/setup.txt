@@ -1,0 +1,13 @@
+sudo apt install python3.12-venv
+python3 -m venv core
+source core/bin/activate
+
+pip install django-cors-headers
+pip install djangorestframework
+pip install djangorestframework-simplejwt
+pip install django-jazzmin
+
+sudo mkdir /var/log/coaster
+sudo chmod ugo+rw /var/log/coaster/
+sudo touch /var/log/coaster/django_sendem_debug.log
+sudo chmod ugo+rw /var/log/coaster/django_sendem_debug.log
