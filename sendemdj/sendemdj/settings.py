@@ -95,8 +95,8 @@ DATABASES = {
     # }
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'shredder',
-        'USER': 'meatshredder',
+        'NAME': 'testshredder_dev',
+        'USER': 'test_user_django_shredder',
         'PASSWORD': 'aofhti1gn6rfb5e',
         'HOST': 'localhost',
         'PORT': '',

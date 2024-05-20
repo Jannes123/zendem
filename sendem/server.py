@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import time
+import logging
 import os
 import socket
+import time
+from logging import config
+from multiprocessing import Lock
 from threading import Thread, active_count, enumerate
+
 from appliance import Appliance
 from messageunitsendem import MessageUnit
-from multiprocessing import Lock
-import logging
-from logging import config
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 abc = Lock()
 xyz = Lock()

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 
+
 class MessageUnit():
     def __init__(self, message, profile_id=None):
         if type(message)==bytes:

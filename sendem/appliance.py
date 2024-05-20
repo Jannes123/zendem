@@ -16,4 +16,3 @@ class Appliance():
         dx = data_message_en + xzero_add
         data1_bytes = bytes(dx, 'utf-8')
         return data1_bytes
-

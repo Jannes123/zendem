@@ -3,20 +3,23 @@
 
 import copy
 import datetime
-import socket
-from threading import Thread, Timer
-from threading import Lock as t_lock
-from sys import path
+import logging
 import os
+import socket
 import time
 import uuid
-from PyQt6 import QtCore, QtGui, QtWidgets
+from logging import config
 from multiprocessing import Lock
-from messageunitsendem import MessageUnit
+from sys import path
+from threading import Lock as t_lock
+from threading import Thread, Timer
+
+from PyQt6 import QtCore, QtGui, QtWidgets
+
 from appliance import Appliance
 from contact_item import ContactItem
-import logging
-from logging import config
+from messageunitsendem import MessageUnit
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 widget_log_lock = Lock()
 network_log_lock = Lock()
@@ -27,8 +30,13 @@ namespace_from_dir = os.environ['PWD'].split(r"/")[-1]
 LOGGING = {
         'version': 1,
         'disable_existing_loggers': False,
-        'formatters': {'name_one': {'format': '%(process)s %(thread)s:%(asctime)s - - %(message)s'},
-                       'name_two': {'format': '>>%(process)s %(thread)s: %(asctime)s ---- %(message)s'}},
+        'formatters': {'name_one': {
+            'format': '%(process)s %(thread)s:%(asctime)s - - %(message)s'
+            },
+                       'name_two': {
+                           'format': '>>%(process)s %(thread)s: %(asctime)s ---- %(message)s'
+                           }
+                       },
         'handlers': {
             'network': {
                 'level': 'DEBUG',
@@ -63,7 +71,7 @@ LOGGING = {
                 'level': 'DEBUG',
                 'propagate': True,
             },
-            'central.sendem_qt_runnable_class':{
+            'central.sendem_qt_runnable_class': {
                 'handlers': ['runnable'],
                 'level': 'DEBUG',
                 'propagate': True,

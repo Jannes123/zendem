@@ -21,17 +21,20 @@ Options:
 # @TODO: Builder pattern creates client
 
 
-import multiprocessing
-from server import Server
-from docopt import docopt, DocoptExit
-import os
-from PyQt6 import QtWidgets
-from multiprocessing import Lock
 import contextlib
-import sys
-from client_of_sendem import Client, ClientWidget
 import logging
+import multiprocessing
+import os
+import sys
 from logging import config
+from multiprocessing import Lock
+
+from docopt import DocoptExit, docopt
+from PyQt6 import QtWidgets
+
+from client_of_sendem import Client, ClientWidget
+from server import Server
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 abc = Lock()
 xyz = Lock()

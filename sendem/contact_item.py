@@ -3,7 +3,8 @@
 
 import datetime
 import json
-from PyQt6 import QtWidgets, QtGui
+
+from PyQt6 import QtGui, QtWidgets
 
 
 class ContactItem(QtWidgets.QListWidgetItem):

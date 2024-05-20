@@ -1,31 +1,54 @@
 #! /usr/bin/env bash
 #-*- coding: utf-8 -*-
-# sudo apt install python3-pip python3-dev
-# sudo apt install libpq-dev postgresql postgresql-contrib
 
+## Setup environment variables according to the machine hostng the app.
+## check current env vars cat /etc/environment
+## JENV=jdev or JENV=jprod or JENV=jtesting
+
+x=0
+package_names=("libpq-dev" "postgresql" "postgresql-contrib" "python3-pip" "python3-dev")
+while [[ $x -lt ${#package_names[@]} ]]
+do
+dpkg -s ${package_names[x]} | grep -E 'Status|Package' | tee grep "installed"
+((x++))
+done;
+
+db_name="testshredder_dev"
+psql_user_name="test_user_django_shredder"
+
+if [ $JENV == "jprod" ]; then
+	db_name="dbmeatshredder";
+	psql_user_name="meatdjangouser";
+fi
+
+echo "Database name:"
+echo $db_name
+echo "Database USER-name"
+echo $pqsl_user_name
+
+function chatshredder_psql_setup(){
+  # opening a connection remotely
+  # psql -U doadmin -h production-sfo-test1-do-user-4866002-0.db.ondigitalocean.com -p 25060 -d defaultdb
+  sudo -u postgres psql -c "\l"
+  sudo -u postgres psql -c "create database $db_name"
+  sudo -u postgres psql -c "CREATE USER $psql_user_name  WITH PASSWORD 'aofhti1gn6rfb5e'"
+  sudo -u postgres psql -c "ALTER ROLE $psql_user_name SET client_encoding TO 'utf8'"
+  sudo -u postgres psql -c "ALTER ROLE $psql_user_name SET default_transaction_isolation TO 'read committed'"
+  sudo -u postgres psql -c "ALTER ROLE $psql_user_name SET timezone TO 'UTC+1'"
+  sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $db_name TO $psql_user_name"
+  sudo -u postgres psql -c "ALTER DATABASE $db_name OWNER TO $psql_user_name"
+}
 # add django app path permanently to venv
 # sudo -u postgres psql
-# could not change directory to "/home/edna": Permission denied
-# psql (14.9 (Ubuntu 14.9-0ubuntu0.22.04.1), server 13.7 (Ubuntu 13.7-0ubuntu0.21.10.1))
-# Type "help" for help.
-#
-#postgres=# CREATE DATABASE shredder;
-#CREATE DATABASE
-#postgres=# CREATE USER meatshredder WITH PASSWORD 'aofhti1gn6rfb5e';
-#CREATE ROLE
-#postgres=# ALTER ROLE meatshredder SET client_encoding TO 'utf8';
-#ALTER ROLE
-#postgres=# ALTER ROLE meatshredder SET default_transaction_isolation TO 'read committed';
-#postgres=# ALTER ROLE meatshredder SET timezone TO 'UTC+1';
-#ALTER ROLE
-#postgres=# GRANT ALL PRIVILEGES ON DATABASE shredder TO meatshredder;
-#GRANT
-# ALTER DATABASE shredder OWNER TO meatshredder;
-#postgres=# \q
-#sudo apt install python3-pip python3-dev libpq-dev postgresql postgresql-contrib
 
-echo "Install script"
-echo "\n"
+function venv_pip_setup(){
+  python3  -m venv core
+  source core/bin/activate
+  pip install -r install/requirements.txt
+  echo "venv core install script finished"
+  echo "\n"
+}
+
 ##
 # BASH menu script that checks:
 #   - Memory usage
@@ -33,6 +56,7 @@ echo "\n"
 #   - Number of TCP connections
 #   - Kernel version
 #
+
 server_name=$(hostname)
 
 function memory_check() {
@@ -72,6 +96,14 @@ function all_checks() {
 	tcp_check
 	kernel_check
 }
+
+echo "Press Y to do psql setup.  Press n to skip."
+read choicey
+if [[ "${choicey}" == "Y" ]];
+  then
+  chatshredder_psql_setup
+fi
+
 echo "Press Y to migrate without changing anything else. Press n to skip"
 read choicex
 if [[ "${choicex}" == "Y" ]];
@@ -89,5 +121,14 @@ if [[ "${choicey}" == "Y" ]];
   all_checks
 fi
 
+echo "Press Y to setup pip venv requirements. Press n to skip"
+read choicex
+if [[ "${choicex}" == "Y" ]];
+  then
+  venv_pip_setup
+fi
+
+
 echo "end"
 exit 0;
+}
