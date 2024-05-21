@@ -33,9 +33,10 @@ __pycache__/
 # IDE
 .idea
 .idea/*
-
+.run
 # Distribution / packaging
 .Python
+core/
 env/
 build/
 develop-eggs/
