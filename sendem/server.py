@@ -153,6 +153,9 @@ class Server(Appliance):
         return self.mu_list
 
     def receiver_of_handle(self, conn, addr):
+        """
+        Returns None if there is nothing received.
+        """
         try:
             msg = conn.recv(self.__HEADER__).decode(self.__FORMAT__).strip()
         except socket.error:
@@ -216,10 +219,9 @@ class Server(Appliance):
                         self.__RUN__ = False
                 if self.q_out and self.q_out.qsize() == 0:
                     self.q_out.put(msg)
-                    ## !!!!!!!!!!!!!!!
-            if self.authenticated_incoming():
-                self.send_now()
-
+                    ## !!!
+                if self.authenticated_incoming(msg):
+                        self.send_now(conn, msg='debug--ACK')
             msg = None
 
     def start(self):
@@ -263,4 +265,22 @@ class Server(Appliance):
             i.join()
             self.SERVER_LOGGER.debug('server-thread joined.')
             del i
-            self.SERVER_LOGGER.debug('deleted ' + i)
+            self.SERVER_LOGGER.debug('deleted ')
+
+    def authenticated_incoming(self, data_message: str):
+        """check if mu origin is authenticated and is authentic."""
+        # check db or cache
+        self.SERVER_LOGGER.debug('checking if mu origin is authenticated')
+        return True
+
+    def send_now(self, conn, msg: str):
+        """
+        visible message ACK-like message for debugging only
+        """
+        try:
+            sendbytes = msg.encode(self.__FORMAT__)
+            conn.sendall(sendbytes)
+        except socket.error:
+            self.SERVER_LOGGER.debug("socket error.  tried to send.")
+            errmsg: str = str(socket.error)
+            self.SERVER_LOGGER.debug(errmsg)

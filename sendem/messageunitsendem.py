@@ -10,8 +10,8 @@ class MessageUnit():
         else:
             self.__message__ = message
         self.__read__ = False
-        self.__admin_id__ = uuid.uuid4() # used to id the message
-        self.__sendem_profile__ = profile_id # uuid.uuid4()# sendem profile id retreived from direct webcall by GUI
+        self.__admin_id__ = uuid.uuid4()
+        self.__sendem_profile__ = profile_id
 
     def get_message(self):
         return self.__message__

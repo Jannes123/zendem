@@ -185,7 +185,7 @@ def daemonize_server(*app_details):
     server_proc.join()
 
 
-def jdaemonize_widget(wgui_queue, w_lock, smokin_client):
+def jdaemonize_widget(wgui_queue, client_to_gui_queue, w_lock, send_to_gui_lock, smokin_client):
     if os.fork() != 0:
         return
     os.setsid()
@@ -199,7 +199,7 @@ def jdaemonize_widget(wgui_queue, w_lock, smokin_client):
     ospid = '+fork 1.1 daemonize client os pid: ' + str(os.getpid())
     print(ospid)
     app = QtWidgets.QApplication([])
-    widget = ClientWidget(wgui_queue, w_lock)
+    widget = ClientWidget(wgui_queue, client_to_gui_queue, w_lock, send_to_gui_lock)
     widget.resize(400, 300)
     widget.show()
     print('COMPLETED: daemonize_widget')
@@ -207,7 +207,7 @@ def jdaemonize_widget(wgui_queue, w_lock, smokin_client):
     # tear_down_streams()
 
 
-def daemonize_network_client(client_queue, ellie_di_lock, smokin_client):
+def daemonize_network_client(client_queue, gui_queue, ellie_di_lock, display_lock, smokin_client):
     if os.fork() != 0:
         return
     os.setsid()
@@ -220,7 +220,11 @@ def daemonize_network_client(client_queue, ellie_di_lock, smokin_client):
     print("gid: " + str(os.getgid()))
     print("sid: " + str(os.getsid(os.getpid())))
     smoke, parsed_args = smokin_client
-    smokey_client = smoke(data=parsed_args, queuey=client_queue, lck=ellie_di_lock)
+    smokey_client = smoke(data=parsed_args,
+                          queuey=client_queue,
+                          gui_queuey=gui_queue,
+                          lck=ellie_di_lock,
+                          disp_lck=display_lock)
     smokey_client.start()
     ospid = '+fork 1.2 daemonize client os pid: ' + str(os.getpid())
     print(ospid)
@@ -232,19 +236,23 @@ def run_daemon_job_start_client(smokin_client):
         Starts another separate process for widget.
     """
     mothership = multiprocessing.get_context('fork')
-    client_queue = mothership.Queue(maxsize=500)
+    gui_to_client_queue = mothership.Queue(maxsize=500)
+    client_to_gui_queue = mothership.Queue(maxsize=500)
     # strings_stashed_buffer = multiprocessing.Array('u', 128, lock=True)
     ellie_di_lock = mothership.Lock()
+    send_to_gui_display_lock = mothership.Lock()
     ospid = '1 daemonize client os pid: ' + str(os.getpid())
     LOGGER.debug(ospid)
     widg_proc = mothership.Process(
         target=jdaemonize_widget,
         name='SendemWidget',
-        args=(client_queue, ellie_di_lock, smokin_client), daemon=True)
+        args=(gui_to_client_queue, client_to_gui_queue, ellie_di_lock, send_to_gui_display_lock, smokin_client),
+            daemon=True)
     network_client_proc = mothership.Process(
         target=daemonize_network_client,
         name='SendemNetworkClient',
-        args=(client_queue, ellie_di_lock, smokin_client), daemon=True)
+        args=(gui_to_client_queue, client_to_gui_queue, ellie_di_lock, send_to_gui_display_lock, smokin_client),
+            daemon=True)
     widg_proc.start()
     network_client_proc.start()
 

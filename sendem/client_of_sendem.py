@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Network client and GUI for sendem TCP  messaging application.
+"""
 
 import copy
 import datetime
@@ -19,6 +22,12 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from appliance import Appliance
 from contact_item import ContactItem
 from messageunitsendem import MessageUnit
+
+USER_ME = 0
+USER_THEM = 1
+BUBBLE_COLORS = {USER_ME: "#90caf9", USER_THEM: "#a5d6a7"}
+BUBBLE_PADDING = QtCore.QMargins(15, 5, 15, 5)
+TEXT_PADDING = QtCore.QMargins(25, 15, 25, 15)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 widget_log_lock = Lock()
@@ -102,9 +111,22 @@ LOGGER.debug(str(LOGGER.handlers))
 
 class Client(Appliance):
     """
-    Network Client.
+    Network Client.  Connected to gui via self.__jqueue_to_gui__
     """
-    def __init__(self, data, queuey, lck):
+    def __init__(self, data, queuey, gui_queuey, lck, disp_lck):
+        """Build class objects and register locks and queues
+         for multiprocessing.
+
+         Args:
+             data (str): String containing complete message.
+             queuey (multiprocessing.Queue): Queue instance.
+             gui_queuey (multiprocessing.Queue): Queue instance.
+             lck (multiprocessing.Lock): Lock instance.
+             disp_lck (multiprocessing.Lock): Lock instance.
+
+        Returns:
+
+        """
         super().__init__()
         config.dictConfig(LOGGING)
         self.CLIENT_LOGGER = logging.getLogger('central.sendem_network_client')
@@ -126,8 +148,10 @@ class Client(Appliance):
         self.buffer_lock = t_lock()
         # id, vname, vdescription, vuser_number, vtimestamp_last_online
         self.directory = []
-        self.__jqueue_to_gui__ = queuey
+        self.__jqueue_from_gui__ = queuey
         self.__to_gui_lock__ = lck
+        self.__from_gui_lck__ = disp_lck
+        self.__to_gui_queue__ = gui_queuey
         self.__fn_fal__ = -1
         self.__DEFAULT_TIMEOUT__ = 100
         self.__client_socket__ = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -139,71 +163,119 @@ class Client(Appliance):
             self.CLIENT_LOGGER.debug(ce)
             self.__no_server__ = True
 
-    def sendem(self):
+    def transmitting_buffer_locked(self, ret_num):
+        """
+        lowlevel socket instructions when safe to send according IPC objects.
+
+        Args:
+            ret_num (int): sending control parameter.
+
+        Returns:
+            ret_num (int): status/size of package sent.
+        """
+        self.CLIENT_LOGGER.debug('buffer locked')
+        for h in self.__xbuffy__:
+            hmsg = h.get_message()
+            self.CLIENT_LOGGER.debug(hmsg)
+            data1 = self.change_to_bytes(hmsg)
+            if self.__client_socket__.fileno() == -1:
+                try:
+                    # reset/create socket connection if fd -1
+                    # self.CLIENT_LOGGER.debug('disconnecting ... client resetting socket')
+                    self.__client_socket__.shutdown(socket.SHUT_RDWR)
+                    self.__client_socket__.close()
+                    self.__client_socket__ = socket.socket(
+                        socket.AF_INET,
+                        socket.SOCK_STREAM,  # fileno=self.__fn_fal__  # | socket.SOCK_NONBLOCK
+                    )
+                    self.__client_socket__.connect(self.__CLIENT_DEVICE_ADDR__)
+                except TimeoutError:
+                    self.CLIENT_LOGGER.debug(TimeoutError)
+                    raise TimeoutError
+                except OSError:
+                    self.CLIENT_LOGGER.debug(OSError)
+                    raise OSError
+            try:
+                ret_num = self.__client_socket__.send(data1)
+                # self.CLIENT_LOGGER.debug(str(ret_num))
+            except TimeoutError:
+                self.CLIENT_LOGGER.debug(TimeoutError)
+            except BrokenPipeError:
+                self.CLIENT_LOGGER.debug('Client socket cannot send:')
+                self.CLIENT_LOGGER.debug(BrokenPipeError.__doc__)
+
+            self.CLIENT_LOGGER.debug('Client: buffer un-locked')
+            if ret_num is not None and ret_num == self.__HEADER__:
+                self.__xbuffy__.remove(h)
+                self.CLIENT_LOGGER.debug(self.__xbuffy__)
+        return ret_num
+
+    def sendem_transmitter(self):
         """
         only sending via one socket for now.
-        :return:
+        convert str to bytes before sending
+        Args:
+
+        Returns:
+
         """
+        # noqa: R701
         data1 = None
         ret_num = None
         while True:
             if self.__xbuffy__.__len__() > 0:
                 with self.buffer_lock:
-                    self.CLIENT_LOGGER.debug('buffer locked')
-                    for h in self.__xbuffy__:
-                        hmsg = h.get_message()
-                        self.CLIENT_LOGGER.debug(hmsg)
-                        data1 = self.change_to_bytes(hmsg)
-                        if self.__client_socket__.fileno() == -1:
-                            try:
-                                # reset/create socket connection if fd -1
-                                self.CLIENT_LOGGER.debug('disconnecting ... client resetting socket')
-                                self.__client_socket__.shutdown(socket.SHUT_RDWR)
-                                self.__client_socket__.close()
-                                self.__client_socket__ = socket.socket(
-                                    socket.AF_INET,
-                                    socket.SOCK_STREAM,  # fileno=self.__fn_fal__  # | socket.SOCK_NONBLOCK
-                                    )
-                                self.__client_socket__.connect(self.__CLIENT_DEVICE_ADDR__)
-                            except TimeoutError:
-                                self.CLIENT_LOGGER.debug(TimeoutError)
-                                raise TimeoutError
-                            except OSError:
-                                self.CLIENT_LOGGER.debug(OSError)
-                                raise OSError
-                        try:
-                            ret_num = self.__client_socket__.send(data1)
-                            self.CLIENT_LOGGER.debug(str(ret_num))
-                        except TimeoutError:
-                            self.CLIENT_LOGGER.debug(TimeoutError)
-                        except BrokenPipeError:
-                            self.CLIENT_LOGGER.debug('Client socket cannot send:')
-                            self.CLIENT_LOGGER.debug(BrokenPipeError.__doc__)
-                    self.CLIENT_LOGGER.debug('buffer un-locked')
-                    if ret_num is not None and ret_num > 0:
-                        self.__xbuffy__.remove(h)
+                    ret_num = self.transmitting_buffer_locked(ret_num)
             else:
                 time.sleep(0.5)
 
     def calliope1(self):
         """
-        Process incoming widget data.
+        Process widget input text.
         """
-        queue_id = str(id(self.__jqueue_to_gui__))
-        self.CLIENT_LOGGER.debug(queue_id)
+        queue_id = str(id(self.__jqueue_from_gui__))
+        self.CLIENT_LOGGER.debug("Client calliope1 queue_id : " + str(queue_id))
         while True:
-            data_in = self.__jqueue_to_gui__.get()  # bytes coming in. must convert to string obj.
+            data_in = self.__jqueue_from_gui__.get()  # bytes coming in. must convert to string obj.
             with self.buffer_lock:
-                self.CLIENT_LOGGER.debug('creating mu')
+                #  self.CLIENT_LOGGER.debug('creating mu')
                 mu = MessageUnit(data_in)  # Class MessageUnit init convert from bytes to obj
                 self.__xbuffy__.append(mu)
+            time.sleep(2)
+            # exit with IPC
 
-    def zcalliope2(self):
+    def z_calliope_receiver(self):
         """
-        Tag messages with uuid etc.
+        @todo: Receive from server and Tag messages with uuid etc.
+        for now debug -received- ACKs from server --- sockets
+        Convert bytes to str and send to Qt component --- multiprocessing queue.
         """
+        x = 0
         while True:
-            time.sleep(0.1)
+            self.CLIENT_LOGGER.debug('running thread with zero load sleep 3' + str(x))
+            # setup variables
+            possible_ack = None
+            # check incoming ACK from server
+            try:
+                possible_ack = self.__client_socket__.recv(1024)
+                self.CLIENT_LOGGER.debug("received " + str(possible_ack))
+            except socket.error:
+                self.CLIENT_LOGGER.debug("socket error.  tried to read. all OK...")
+                errmsg = str(socket.error)
+                self.CLIENT_LOGGER.debug(errmsg)
+            if possible_ack != b'':  # int(len(possible_ack)) == 0
+                # get gui pipe and send ack to screen.
+                msg = possible_ack.decode(encoding=self.__FORMAT__).strip()
+                with self.__to_gui_lock__:
+                    self.__to_gui_queue__.put(msg)
+                    self.CLIENT_LOGGER.debug('to_gui_queue: ' + str(self.__to_gui_queue__))
+            else:
+                self.CLIENT_LOGGER.debug('no ACK received')
+            time.sleep(1)
+            x += 1
+            if x > 20:
+                break
+        self.CLIENT_LOGGER.debug('exiting thread')
 
     def start(self):
         time.sleep(2)
@@ -219,15 +291,16 @@ class Client(Appliance):
         except OSError:
             self.CLIENT_LOGGER.debug(OSError)
 
-        c2 = Thread(target=self.zcalliope2, name='ZCalliope2', daemon=True)
+        c2 = Thread(target=self.z_calliope_receiver, name='ZCalliope2', daemon=True)
         c2.start()
 
-        s = Thread(target=self.sendem, name='Sendem', daemon=True)
+        s = Thread(target=self.sendem_transmitter, name='Sendem', daemon=True)
         s.start()
 
         active_threads_watched_and_monitored = {'c1': c1, 'c2': c2, 's': s}
-        function_map_threads = {'c1': self.calliope1, 'c2': self.zcalliope2, 's': self.sendem}
+        function_map_threads = {'c1': self.calliope1, 'c2': self.z_calliope_receiver, 's': self.sendem_transmitter}
         vxi = 0.0
+        # checkup on threads and keep things going.
         while self.__RUN__:
             vxi += 1
             time.sleep(1)
@@ -240,7 +313,7 @@ class Client(Appliance):
                     active_threads_watched_and_monitored[x].join()
                     active_threads_watched_and_monitored[x] = temp_th
                     temp_th.start()
-                    self.CLIENT_LOGGER.debug('client thread restarted.' + temp_th.name)
+                    self.CLIENT_LOGGER.debug('client thread restarted. Thread name: ' + temp_th.name)
 
 
 class SendWorker(QtCore.QRunnable):
@@ -268,8 +341,105 @@ class SendWorker(QtCore.QRunnable):
         self.CLIENT_LOGGER.debug('finished put')
 
 
+class GUIQueueReceiveWorker(QtCore.QRunnable):
+    """
+    Sendem GUI receive back messages from network client.
+    Basically: takes out overhead delays waiting for locks-and-queues etc.
+    """
+    def __init__(self, *args):
+        super().__init__()
+        config.dictConfig(LOGGING)
+        self.RECEIVER_LOGGER = logging.getLogger('central.sendem_qt_runnable_class')
+        self.__running_switch__ = True  # switched on
+        queue_to_gui, queue_to_gui_lock = args  # multiprocessing queue and lock
+        self.__queue_to_gui__ = queue_to_gui
+        self.__queue_to_gui_lock__ = queue_to_gui_lock
+        self.RECEIVER_LOGGER.debug('init finished GUI queue receiver')
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        """
+        receive data from network client and update gui display data
+        """
+        # assert(type(send_b), bytes)
+        self.RECEIVER_LOGGER.debug('getting queue data from network client..')
+        while self.__running_switch__:
+            if not self.__queue_to_gui__.empty():
+                msg = self.__queue_to_gui__.get()
+            time.sleep(3)
+            self.RECEIVER_LOGGER.debug('QtCore runnable finished polling for incoming GUI data')
+
+
+class MessageDelegate(QtWidgets.QStyledItemDelegate):
+    """
+    Draws each message.
+    """
+    def paint(self, painter, option, index):
+        # Retrieve the user,message uple from our model.data method.
+        user, text = index.model().data(index, QtCore.Qt.DisplayRole)
+
+        # option.rect contains our item dimensions. We need to pad it a bit
+        # to give us space from the edge to draw our shape.
+
+        bubblerect = option.rect.marginsRemoved(BUBBLE_PADDING)
+        textrect = option.rect.marginsRemoved(TEXT_PADDING)
+
+        # draw the bubble, changing color + arrow position depending on who
+        # sent the message. the bubble is a rounded rect, with a triangle in
+        # the edge.
+        painter.setPen(QtCore.Qt.NoPen)
+        color = QtGui.QColor(BUBBLE_COLORS[user])
+        painter.setBrush(color)
+        painter.drawRoundedRect(bubblerect, 10, 10)
+
+        # draw the triangle bubble-pointer, starting from
+
+        if user == USER_ME:
+            p1 = bubblerect.topRight()
+        else:
+            p1 = bubblerect.topLeft()
+        painter.drawPolygon(p1 + QtCore.QPoint(-20, 0), p1 + QtCore.QPoint(20, 0), p1 + QtCore.QPoint(0, 20))
+
+        # draw the text
+        painter.setPen(QtCore.Qt.black)
+        painter.drawText(textrect, QtCore.Qt.TextWordWrap, text)
+
+    def sizeHint(self, option, index):
+        _, text = index.model().data(index, QtCore.Qt.DisplayRole)
+        # Calculate the dimensions the text will require.
+        metrics = QtWidgets.QApplication.fontMetrics()
+        rect = option.rect.marginsRemoved(TEXT_PADDING)
+        rect = metrics.boundingRect(rect, QtCore.Qt.TextWordWrap, text)
+        rect = rect.marginsAdded(TEXT_PADDING)  # Re add padding for item size.
+        return rect.size()
+
+
+class MessageModel(QtCore.QAbstractListModel):
+    def __init__(self, *args, **kwargs):
+        super(MessageModel, self).__init__(*args, **kwargs)
+        self.messages = []
+
+    def data(self, index, role=None):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            # Here we pass the delegate the user, message tuple.
+            return self.messages[index.row()]
+
+    def rowCount(self, index):
+        return len(self.messages)
+
+    def add_message(self, who, text):
+        """
+        Add an message to our message list, getting the text from the QLineEdit
+        """
+        if text:  # Don't add empty strings.
+            # Access the list via the model.
+            self.messages.append((who, text))
+            # Trigger refresh.
+            self.layoutChanged.emit()
+
+
 class ClientWidget(QtWidgets.QWidget):
-    def __init__(self, pipet, lck):
+    def __init__(self, pipet, queue_to_gui, lck, queue_to_gui_lock):
         super().__init__()
         config.dictConfig(LOGGING)
         self.WIDGET_LOGGER = logging.getLogger('central.sendem_widget')
@@ -277,6 +447,7 @@ class ClientWidget(QtWidgets.QWidget):
         self.threadpool = QtCore.QThreadPool()
         #  and-engine
         self.__queue_to_network_client__ = pipet
+        self.__queue_to_gui__ = queue_to_gui
         self.buttonx = QtWidgets.QPushButton("STUUR")  # ("WYV974GP")("CA 800 162")
         self.buttonx.setStyleSheet('QPushButton {background:#6C8F8B}')
         self.button_contact = QtWidgets.QPushButton("contact IDs")
@@ -329,8 +500,11 @@ class ClientWidget(QtWidgets.QWidget):
 
         self.directory = []
         self.__queue_lock__ = lck
+        self.__queue_to_gui_lock__ = queue_to_gui_lock
         self.__typing_flag__ = False
         self.__timer_short__ = None
+        # setup methods for threads
+        self.receive_chat_text_into_gui()
 
     def input_for_contact_create(self):
         """inxup"""
@@ -347,6 +521,7 @@ class ClientWidget(QtWidgets.QWidget):
         except self.__queue_to_network_client__.Full:
             self.WIDGET_LOGGER.debug('Widget sending: Queue is full')
 
+    # noqa: E305
     def contact_list_show(self):
         # if already visible
         if self.list_of_contacts.isVisibleTo(self):
@@ -389,6 +564,7 @@ class ClientWidget(QtWidgets.QWidget):
             self.__queue_to_network_client__.put(text_from_contacts)
 
     def send_chat_text_from_gui(self):
+        """triggered by GUI"""
         self.WIDGET_LOGGER.debug(' send_chat_text_from_gui ')
         text_from_gui = self.editor_of_shredder.document()
         send_text_from_gui = str(text_from_gui.toRawText()) + ' '  # trailing slash issue
@@ -407,8 +583,36 @@ class ClientWidget(QtWidgets.QWidget):
         except BaseException as e:
             self.WIDGET_LOGGER.debug('SendWorker Error ')
             self.WIDGET_LOGGER.debug(OSError.__doc__)
+            # @todo: popup alert or similar exception response
         self.WIDGET_LOGGER.debug('SendWorker created ')
 
+        self.WIDGET_LOGGER.debug(' QRunnable threadpool started ')
+
+    def receive_chat_text_into_gui(self):
+        """
+        Timed or continuous polling?
+        """
+        self.WIDGET_LOGGER.debug(' setup receive_chat_text_to_gui ... ')
+        self.editor_of_shredder.setPlainText("Test received")
+        self.editor_of_shredder.append("iNIt messaging..")
+        self.editor_of_shredder.show()
+        self.WIDGET_LOGGER.debug('....sent text to Qt component ')
+        self.WIDGET_LOGGER.debug('deepcopied text from gui ')
+        try:
+            self.editor_of_shredder.clear()
+        except BaseException as e:
+            self.WIDGET_LOGGER.debug('editor Error ')
+            self.WIDGET_LOGGER.debug(e)
+        try:
+            worker_params = (self.__queue_to_gui__, self.__queue_to_gui_lock__)
+            worker = GUIQueueReceiveWorker(worker_params)
+            self.threadpool.start(worker)
+            self.WIDGET_LOGGER.debug('.... GUIQueueReceiveWorker worker sent to threadpool ')
+        except BaseException as e:
+            self.WIDGET_LOGGER.debug('SendWorker Error ')
+            self.WIDGET_LOGGER.debug(OSError.__doc__)
+            # @todo: popup alert or similar exception response
+        self.WIDGET_LOGGER.debug('SendWorker created ')
         self.WIDGET_LOGGER.debug(' QRunnable threadpool started ')
 
     def send_typing_alert(self):
